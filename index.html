@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>color_gazer // Real-Time Visual-to-Voice System</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: JetBrains Mono & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --td-bg: #111315;
+      --td-panel: #1a1d21;
+      --td-border: #2c313a;
+      --td-green: #22c55e;
+      --td-accent: #38bdf8;
+    }
+    body {
+      background-color: var(--td-bg);
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .font-mono-tech {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #111315;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    /* TouchDesigner CHOP Grid Background */
+    .chop-bg {
+      background-color: #14171a;
+      background-image: 
+        linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
+      background-size: 20% 24px;
+    }
+    /* Pixelated rendering for 64x64 analysis canvases */
+    .pixelated {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    input[type="range"] {
+      accent-color: #22c55e;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between select-none">
+
+  <!-- TOP HEADER BAR (TouchDesigner / Flight Computer HUD Style) -->
+  <header class="border-b border-zinc-800 bg-zinc-950/90 backdrop-blur sticky top-0 z-30 px-3 py-2.5">
+    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div id="statusLed" class="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b] transition-colors"></div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-mono-tech font-extrabold text-base sm:text-lg tracking-wider text-white">color_gazer</h1>
+            <span class="text-[10px] font-mono-tech uppercase px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">64×64 HSV ENGINE</span>
+          </div>
+          <p class="text-[11px] text-zinc-400 hidden sm:block">A system that translates color into voice.</p>
+        </div>
+      </div>
+
+      <!-- Right Action Controls -->
+      <div class="flex items-center gap-2">
+        <!-- Audio Enable / Start Button -->
+        <button id="btnStartSystem" class="font-mono-tech text-xs font-bold px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-lg shadow-emerald-900/30 flex items-center gap-1.5 transition">
+          <span id="startIcon">▶</span>
+          <span id="startText">START SYSTEM (音声ON)</span>
+        </button>
+
+        <!-- Source Toggle: Camera vs Ramp -->
+        <button id="btnToggleSource" class="font-mono-tech text-xs px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition">
+          📷 CAM
+        </button>
+
+        <!-- Flip Camera (Mobile) -->
+        <button id="btnFlipCam" title="カメラ切替 (前面/背面)" class="font-mono-tech text-xs px-2.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition">
+          🔄
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE -->
+  <main class="max-w-6xl w-full mx-auto flex-1 p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+    <!-- LEFT COLUMN: VIEWPORT & TOP MONITOR (7 cols on desktop) -->
+    <section class="lg:col-span-7 flex flex-col gap-3">
+      
+      <!-- MAIN MONITOR CARD -->
+      <div class="bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden shadow-xl flex flex-col">
+        <!-- Viewport Top Bar -->
+        <div class="px-3 py-2 bg-zinc-950 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 font-mono-tech text-xs text-zinc-400">
+            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+            <span id="viewportTitle">TOP // res1 (64×64) → chroma_[r/y/g/b]</span>
+          </div>
+          <!-- View Mode Selector -->
+          <div class="flex items-center bg-zinc-900 p-0.5 rounded-lg border border-zinc-800 text-[11px] font-mono-tech">
+            <button data-view="rgb" class="view-btn px-2 py-1 rounded-md bg-zinc-700 text-white font-semibold">RGB</button>
+            <button data-view="quad" class="view-btn px-2 py-1 rounded-md text-zinc-400 hover:text-white">4-MASK</button>
+            <button data-view="overlay" class="view-btn px-2 py-1 rounded-md text-zinc-400 hover:text-white">KEY OVERLAY</button>
+            <button data-view="mono" class="view-btn px-2 py-1 rounded-md text-zinc-400 hover:text-white">MONO</button>
+          </div>
+        </div>
+
+        <!-- Video / Canvas Display Container -->
+        <div class="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+          <!-- Hidden raw video element for camera stream -->
+          <video id="cameraVideo" playsinline autoplay muted class="hidden"></video>
+          
+          <!-- Main visible display canvas -->
+          <canvas id="displayCanvas" width="256" height="256" class="w-full h-full object-contain pixelated"></canvas>
+
+          <!-- 4-Quad Mask Labels (Only visible in 4-MASK mode) -->
+          <div id="quadLabels" class="hidden absolute inset-0 pointer-events-none grid grid-cols-2 grid-rows-2 font-mono-tech text-[10px] font-bold">
+            <div class="p-2 border-r border-b border-zinc-700/60 flex items-start justify-between">
+              <span class="bg-red-950/80 text-red-400 px-1.5 py-0.5 rounded border border-red-800/60">chroma_red</span>
+              <span id="quadValRed" class="bg-black/70 text-zinc-300 px-1 rounded">0.00</span>
+            </div>
+            <div class="p-2 border-b border-zinc-700/60 flex items-start justify-between">
+              <span class="bg-yellow-950/80 text-yellow-300 px-1.5 py-0.5 rounded border border-yellow-800/60">chroma_yellow</span>
+              <span id="quadValYellow" class="bg-black/70 text-zinc-300 px-1 rounded">0.00</span>
+            </div>
+            <div class="p-2 border-r border-zinc-700/60 flex items-start justify-between">
+              <span class="bg-emerald-950/80 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-800/60">chroma_green</span>
+              <span id="quadValGreen" class="bg-black/70 text-zinc-300 px-1 rounded">0.00</span>
+            </div>
+            <div class="p-2 flex items-start justify-between">
+              <span class="bg-blue-950/80 text-blue-400 px-1.5 py-0.5 rounded border border-blue-800/60">chroma_blue</span>
+              <span id="quadValBlue" class="bg-black/70 text-zinc-300 px-1 rounded">0.00</span>
+            </div>
+          </div>
+
+          <!-- HUD Overlay: Active State & LFO Trigger Indicator -->
+          <div class="absolute bottom-3 left-3 right-3 flex items-end justify-between pointer-events-none">
+            <!-- Dominant Word Callout -->
+            <div class="bg-black/80 backdrop-blur-md border border-zinc-700/80 rounded-lg px-3.5 py-2 shadow-lg">
+              <div class="text-[10px] font-mono-tech text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span>ACTIVE OUTPUT (INDEX: <strong id="hudIndex" class="text-white">0</strong>)</span>
+              </div>
+              <div id="hudWord" class="font-mono-tech font-extrabold text-2xl sm:text-4xl tracking-tight text-zinc-500">
+                NONE
+              </div>
+            </div>
+
+            <!-- LFO Pulse & Speed Readout -->
+            <div class="bg-black/80 backdrop-blur-md border border-zinc-700/80 rounded-lg px-3 py-2 text-right font-mono-tech">
+              <div class="flex items-center justify-end gap-2 mb-1">
+                <span class="text-[10px] text-zinc-400">LFO PULSE</span>
+                <div id="lfoPulseBox" class="w-3.5 h-3.5 rounded-sm bg-zinc-800 border border-zinc-600 transition-transform duration-75"></div>
+              </div>
+              <div class="text-xs text-zinc-300">
+                <span id="hudFreq" class="font-bold text-emerald-400">1.50</span> Hz | 
+                <span id="hudSpeed" class="font-bold text-sky-400">1.20</span>x
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TEST RAMP GENERATOR CONTROLS (Shown when in RAMP mode or for quick testing) -->
+        <div id="rampControls" class="hidden p-3 bg-zinc-950/90 border-t border-zinc-800 flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <span class="font-mono-tech text-xs text-amber-400 font-semibold flex items-center gap-1.5">
+              🌈 RAMP1 (テスト映像ジェネレーター)
+            </span>
+            <div class="flex gap-1 font-mono-tech text-[11px]">
+              <button data-preset="rainbow" class="ramp-preset px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700">Rainbow</button>
+              <button data-preset="red" class="ramp-preset px-2 py-0.5 rounded bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800">Red</button>
+              <button data-preset="yellow" class="ramp-preset px-2 py-0.5 rounded bg-yellow-950/80 hover:bg-yellow-900 text-yellow-200 border border-yellow-800">Yellow</button>
+              <button data-preset="green" class="ramp-preset px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800">Green</button>
+              <button data-preset="blue" class="ramp-preset px-2 py-0.5 rounded bg-blue-950/80 hover:bg-blue-900 text-blue-300 border border-blue-800">Blue</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono-tech">
+            <label class="flex flex-col gap-1">
+              <div class="flex justify-between text-zinc-400">
+                <span>Phase (色相スクロール)</span>
+                <span id="valRampPhase">0.00</span>
+              </div>
+              <input id="sliderRampPhase" type="range" min="0" max="1" step="0.01" value="0" class="w-full" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <div class="flex justify-between text-zinc-400">
+                <span>Test Value / Brightness (明るさテスト)</span>
+                <span id="valRampBright">0.75</span>
+              </div>
+              <input id="sliderRampBright" type="range" min="0.02" max="1" step="0.01" value="0.75" class="w-full" />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- MINI 4-CHROMA KEY TOP STRIP (Always visible live preview of the 4 masks) -->
+      <div class="grid grid-cols-4 gap-2">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 flex flex-col gap-1">
+          <div class="flex justify-between items-center font-mono-tech text-[10px]">
+            <span class="text-red-400 font-bold">chroma_red</span>
+            <span id="miniRedPct" class="text-zinc-400">0%</span>
+          </div>
+          <canvas id="canvasRed" width="64" height="64" class="w-full aspect-video bg-black rounded pixelated border border-zinc-800"></canvas>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 flex flex-col gap-1">
+          <div class="flex justify-between items-center font-mono-tech text-[10px]">
+            <span class="text-yellow-300 font-bold">chroma_yel</span>
+            <span id="miniYellowPct" class="text-zinc-400">0%</span>
+          </div>
+          <canvas id="canvasYellow" width="64" height="64" class="w-full aspect-video bg-black rounded pixelated border border-zinc-800"></canvas>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 flex flex-col gap-1">
+          <div class="flex justify-between items-center font-mono-tech text-[10px]">
+            <span class="text-emerald-400 font-bold">chroma_grn</span>
+            <span id="miniGreenPct" class="text-zinc-400">0%</span>
+          </div>
+          <canvas id="canvasGreen" width="64" height="64" class="w-full aspect-video bg-black rounded pixelated border border-zinc-800"></canvas>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 flex flex-col gap-1">
+          <div class="flex justify-between items-center font-mono-tech text-[10px]">
+            <span class="text-sky-400 font-bold">chroma_blu</span>
+            <span id="miniBluePct" class="text-zinc-400">0%</span>
+          </div>
+          <canvas id="canvasBlue" width="64" height="64" class="w-full aspect-video bg-black rounded pixelated border border-zinc-800"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT COLUMN: CHOP MONITORS & PARAMETERS (5 cols on desktop) -->
+    <section class="lg:col-span-5 flex flex-col gap-3">
+
+      <!-- 1. MERGE1 & ANALYZE CHOP MONITOR (Color Ratio & Threshold) -->
+      <div class="bg-zinc-900/90 border border-zinc-800 rounded-xl p-3.5 shadow-xl flex flex-col gap-3">
+        <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+          <div class="flex items-center gap-1.5 font-mono-tech text-xs text-emerald-400 font-bold">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>CHOP // merge1 → shuffle1 → analyze1</span>
+          </div>
+          <span class="font-mono-tech text-[11px] bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 text-zinc-300">
+            Index of Max: <strong id="chopIndexOut" class="text-emerald-400">0</strong>
+          </span>
+        </div>
+
+        <!-- CHOP Bar Meters -->
+        <div class="chop-bg rounded-lg p-2.5 border border-zinc-800/90 flex flex-col gap-2 font-mono-tech text-xs relative">
+          <!-- Vertical Threshold Marker Line -->
+          <div id="thresholdMarkerLine" class="absolute top-0 bottom-0 border-l-2 border-dashed border-amber-400/70 pointer-events-none z-10" style="left: 20%;"></div>
+
+          <!-- 0: chan1 (none threshold) -->
+          <div class="relative flex items-center h-6 bg-zinc-950/70 rounded overflow-hidden border border-zinc-800/80">
+            <div id="barNone" class="h-full bg-zinc-600/60 transition-all duration-75" style="width: 20%;"></div>
+            <div class="absolute inset-0 px-2 flex justify-between items-center text-[11px]">
+              <span class="text-zinc-300">0: chan1 (none 閾値)</span>
+              <span id="valNone" class="text-zinc-200 font-bold">0.200</span>
+            </div>
+          </div>
+
+          <!-- 1: red -->
+          <div class="relative flex items-center h-6 bg-zinc-950/70 rounded overflow-hidden border border-zinc-800/80">
+            <div id="barRed" class="h-full bg-red-600/75 transition-all duration-75" style="width: 0%;"></div>
+            <div class="absolute inset-0 px-2 flex justify-between items-center text-[11px]">
+              <span class="text-red-300 font-semibold">1: red (Hue 340-20)</span>
+              <span id="valRed" class="text-zinc-200 font-bold">0.000</span>
+            </div>
+          </div>
+
+          <!-- 2: yellow -->
+          <div class="relative flex items-center h-6 bg-zinc-950/70 rounded overflow-hidden border border-zinc-800/80">
+            <div id="barYellow" class="h-full bg-yellow-500/75 transition-all duration-75" style="width: 0%;"></div>
+            <div class="absolute inset-0 px-2 flex justify-between items-center text-[11px]">
+              <span class="text-yellow-200 font-semibold">2: yellow (Hue 40-75)</span>
+              <span id="valYellow" class="text-zinc-200 font-bold">0.000</span>
+            </div>
+          </div>
+
+          <!-- 3: green -->
+          <div class="relative flex items-center h-6 bg-zinc-950/70 rounded overflow-hidden border border-zinc-800/80">
+            <div id="barGreen" class="h-full bg-emerald-500/75 transition-all duration-75" style="width: 0%;"></div>
+            <div class="absolute inset-0 px-2 flex justify-between items-center text-[11px]">
+              <span class="text-emerald-300 font-semibold">3: green (Hue 85-160)</span>
+              <span id="valGreen" class="text-zinc-200 font-bold">0.000</span>
+            </div>
+          </div>
+
+          <!-- 4: blue -->
+          <div class="relative flex items-center h-6 bg-zinc-950/70 rounded overflow-hidden border border-zinc-800/80">
+            <div id="barBlue" class="h-full bg-blue-500/75 transition-all duration-75" style="width: 0%;"></div>
+            <div class="absolute inset-0 px-2 flex justify-between items-center text-[11px]">
+              <span class="text-sky-300 font-semibold">4: blue (Hue 190-265)</span>
+              <span id="valBlue" class="text-zinc-200 font-bold">0.000</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Threshold & Chroma Key Sliders -->
+        <div class="grid grid-cols-2 gap-2.5 pt-1 text-xs font-mono-tech">
+          <label class="flex flex-col gap-1 bg-zinc-950/60 p-2 rounded-lg border border-zinc-800/80">
+            <div class="flex justify-between text-zinc-400 text-[11px]">
+              <span>Threshold (constant1)</span>
+              <span id="lblThreshold" class="text-amber-400">0.20</span>
+            </div>
+            <input id="sliderThreshold" type="range" min="0.02" max="0.60" step="0.01" value="0.20" />
+          </label>
+          <label class="flex flex-col gap-1 bg-zinc-950/60 p-2 rounded-lg border border-zinc-800/80">
+            <div class="flex justify-between text-zinc-400 text-[11px]">
+              <span>Filter Width (平滑化)</span>
+              <span id="lblSmoothing" class="text-emerald-400">0.20s</span>
+            </div>
+            <input id="sliderSmoothing" type="range" min="0.0" max="0.85" step="0.05" value="0.20" />
+          </label>
+        </div>
+      </div>
+
+      <!-- 2. BRIGHTNESS & LFO SPEED CONTROL (Section 1 & Section 3) -->
+      <div class="bg-zinc-900/90 border border-zinc-800 rounded-xl p-3.5 shadow-xl flex flex-col gap-3">
+        <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+          <div class="flex items-center gap-1.5 font-mono-tech text-xs text-sky-400 font-bold">
+            <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+            <span>CHOP // brightness → math_freq & math_speed</span>
+          </div>
+          <!-- Quantize Mode Toggle: Continuous vs 7-Step -->
+          <div class="flex bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 font-mono-tech text-[10px]">
+            <button id="btnModeCont" class="px-2 py-0.5 rounded bg-emerald-600 text-white font-bold">無段階</button>
+            <button id="btnModeStep" class="px-2 py-0.5 rounded text-zinc-400 hover:text-white">7段階 (Limit)</button>
+          </div>
+        </div>
+
+        <!-- Brightness Meter -->
+        <div class="chop-bg rounded-lg p-2.5 border border-zinc-800/90 flex flex-col gap-2 font-mono-tech text-xs">
+          <div class="relative flex items-center h-6 bg-zinc-950/70 rounded overflow-hidden border border-zinc-800/80">
+            <div id="barBrightness" class="h-full bg-gradient-to-r from-zinc-500 to-white transition-all duration-75" style="width: 50%;"></div>
+            <div class="absolute inset-0 px-2 flex justify-between items-center text-[11px]">
+              <span class="text-zinc-200 font-semibold drop-shadow">brightness (輝度)</span>
+              <span id="valBrightness" class="text-white font-bold drop-shadow">0.500</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-[11px]">
+            <div class="bg-zinc-950/80 px-2.5 py-1.5 rounded border border-zinc-800 flex justify-between items-center">
+              <span class="text-zinc-400">math_freq:</span>
+              <span class="text-emerald-400 font-bold"><strong id="valFreqOut">2.75</strong> Hz</span>
+            </div>
+            <div class="bg-zinc-950/80 px-2.5 py-1.5 rounded border border-zinc-800 flex justify-between items-center">
+              <span class="text-zinc-400">math_speed:</span>
+              <span class="text-sky-400 font-bold"><strong id="valSpeedOut">1.60</strong> x</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Monochrome Mode Selection (Luminance vs Maximum HSV Value) -->
+        <div class="flex items-center justify-between text-xs font-mono-tech bg-zinc-950/60 px-2.5 py-2 rounded-lg border border-zinc-800/80">
+          <span class="text-zinc-400 text-[11px]">mono1 Mode (明るさ算出):</span>
+          <select id="selectMonoMode" class="bg-zinc-900 text-zinc-200 border border-zinc-700 rounded px-2 py-1 text-[11px] focus:outline-none">
+            <option value="luminance">Luminance (標準輝度)</option>
+            <option value="max">Maximum (純色でも1.0)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 3. GPWS VOICE ENGINE & AUDIO FILE IN CHOP (Section 4) -->
+      <div class="bg-zinc-900/90 border border-zinc-800 rounded-xl p-3.5 shadow-xl flex flex-col gap-2.5">
+        <div class="flex items-center justify-between border-b border-zinc-800 pb-2">
+          <div class="flex items-center gap-1.5 font-mono-tech text-xs text-amber-400 font-bold">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>AUDIO // GPWS Flight Computer Voice</span>
+          </div>
+          <button id="btnTestVoice" class="font-mono-tech text-[11px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700">
+            🔊 TEST CALL
+          </button>
+        </div>
+
+        <!-- Voice Engine Mode Selector -->
+        <div class="grid grid-cols-1 gap-2 text-xs font-mono-tech">
+          <div class="flex items-center justify-between bg-zinc-950/60 px-2.5 py-2 rounded-lg border border-zinc-800/80">
+            <span class="text-zinc-400 text-[11px]">Voice Engine:</span>
+            <select id="selectVoiceMode" class="bg-zinc-900 text-amber-300 border border-zinc-700 rounded px-2 py-1 text-[11px] focus:outline-none">
+              <option value="gpws">GPWS Synth + TTS (無線歪み＋声)</option>
+              <option value="tts">Pure TTS Voice (標準音声のみ)</option>
+              <option value="custom">Custom WAV Buffer (ピッチ連動)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Optional Custom Audio File Uploader (Replicating Audio File In CHOP) -->
+        <details class="bg-zinc-950/60 rounded-lg border border-zinc-800/80 text-xs">
+          <summary class="px-2.5 py-2 font-mono-tech text-[11px] text-zinc-400 cursor-pointer hover:text-zinc-200">
+            📁 独自の音声ファイル (.wav / .aiff / .mp3) を読み込む
+          </summary>
+          <div class="p-2.5 border-t border-zinc-800 grid grid-cols-2 gap-2 font-mono-tech text-[10px]">
+            <label class="flex flex-col gap-1 bg-zinc-900 p-1.5 rounded border border-zinc-800">
+              <span class="text-red-400 font-bold">audio_red:</span>
+              <input type="file" accept="audio/*" data-word="red" class="custom-audio-input text-zinc-400 file:bg-zinc-800 file:text-zinc-200 file:border-0 file:rounded file:px-1.5 file:py-0.5" />
+            </label>
+            <label class="flex flex-col gap-1 bg-zinc-900 p-1.5 rounded border border-zinc-800">
+              <span class="text-yellow-300 font-bold">audio_yellow:</span>
+              <input type="file" accept="audio/*" data-word="yellow" class="custom-audio-input text-zinc-400 file:bg-zinc-800 file:text-zinc-200 file:border-0 file:rounded file:px-1.5 file:py-0.5" />
+            </label>
+            <label class="flex flex-col gap-1 bg-zinc-900 p-1.5 rounded border border-zinc-800">
+              <span class="text-emerald-400 font-bold">audio_green:</span>
+              <input type="file" accept="audio/*" data-word="green" class="custom-audio-input text-zinc-400 file:bg-zinc-800 file:text-zinc-200 file:border-0 file:rounded file:px-1.5 file:py-0.5" />
+            </label>
+            <label class="flex flex-col gap-1 bg-zinc-900 p-1.5 rounded border border-zinc-800">
+              <span class="text-sky-400 font-bold">audio_blue:</span>
+              <input type="file" accept="audio/*" data-word="blue" class="custom-audio-input text-zinc-400 file:bg-zinc-800 file:text-zinc-200 file:border-0 file:rounded file:px-1.5 file:py-0.5" />
+            </label>
+          </div>
+        </details>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- FOOTER CAPTION -->
+  <footer class="border-t border-zinc-800/80 bg-zinc-950 px-4 py-3 text-center text-xs text-zinc-500 font-mono-tech">
+    <span>color_gazer — A system that translates color into voice. It reads the dominant color on the screen in real time and keeps calling out its name.</span>
+  </footer>
+
+  <!-- APPLICATION LOGIC -->
+  <script>
+    /**
+     * color_gazer — TouchDesigner Patch Ported to Web (Canvas + Web Audio + Web Speech API)
+     * Resolution: 64x64 Downsampled Pixel Analysis
+     */
+    const RESOLUTION = 64;
+    const TOTAL_PIXELS = RESOLUTION * RESOLUTION;
+
+    // Offscreen 64x64 Canvas for pixel analysis (`res1`)
+    const procCanvas = document.createElement('canvas');
+    procCanvas.width = RESOLUTION;
+    procCanvas.height = RESOLUTION;
+    const procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
+
+    // Visible UI Canvases
+    const displayCanvas = document.getElementById('displayCanvas');
+    const displayCtx = displayCanvas.getContext('2d');
+
+    const maskCanvases = {
+      red: document.getElementById('canvasRed').getContext('2d'),
+      yellow: document.getElementById('canvasYellow').getContext('2d'),
+      green: document.getElementById('canvasGreen').getContext('2d'),
+      blue: document.getElementById('canvasBlue').getContext('2d')
+    };
+
+    // System State
+    const state = {
+      audioEnabled: false,
+      sourceMode: 'camera', // 'camera' | 'ramp'
+      facingMode: 'environment', // 'environment' (背面) | 'user' (前面)
+      viewMode: 'rgb', // 'rgb' | 'quad' | 'overlay' | 'mono'
+      monoMode: 'luminance', // 'luminance' | 'max'
+      quantize7Steps: false,
+      voiceMode: 'gpws', // 'gpws' | 'tts' | 'custom'
+      threshold: 0.20,
+      smoothing: 0.20, // Filter CHOP width
+
+      // Test Ramp Generator Parameters
+      rampPreset: 'rainbow',
+      rampPhase: 0.0,
+      rampBright: 0.75,
+
+      // Smoothed CHOP Values
+      brightness: 0.5,
+      ratios: {
+        red: 0,
+        yellow: 0,
+        green: 0,
+        blue: 0
+      },
+      activeIndex: 0, // 0: none, 1: red, 2: yellow, 3: green, 4: blue
+      freqHz: 1.5,
+      speedRate: 1.2,
+      lastTriggerTime: 0
+    };
+
+    const INDEX_TO_WORD = ['NONE', 'RED', 'YELLOW', 'GREEN', 'BLUE'];
+    const INDEX_TO_COLOR_CLASS = [
+      'text-zinc-500',
+      'text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.6)]',
+      'text-yellow-300 drop-shadow-[0_0_10px_rgba(253,224,71,0.6)]',
+      'text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.6)]',
+      'text-sky-400 drop-shadow-[0_0_10px_rgba(56,189,248,0.6)]'
+    ];
+
+    // Web Audio API Context & Custom Buffers
+    let audioCtx = null;
+    let selectedMaleVoice = null;
+    const customAudioBuffers = {
+      red: null,
+      yellow: null,
+      green: null,
+      blue: null
+    };
+
+    // Initialize SpeechSynthesis Voice (Prefer Male English Voice like Alex, Daniel, Google UK/US Male)
+    function initVoices() {
+      if (!('speechSynthesis' in window)) return;
+      const voices = window.speechSynthesis.getVoices();
+      const enVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+      const preferredNames = ['daniel', 'alex', 'fred', 'male', 'david', 'mark', 'arthur', 'gordon', 'google us english'];
+      for (const name of preferredNames) {
+        const match = enVoices.find(v => v.name.toLowerCase().includes(name));
+        if (match) {
+          selectedMaleVoice = match;
+          break;
+        }
+      }
+      if (!selectedMaleVoice && enVoices.length > 0) {
+        selectedMaleVoice = enVoices[0];
+      }
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = initVoices;
+      initVoices();
+    }
+
+    // Start Camera Stream (`Video Device In TOP`)
+    const videoEl = document.getElementById('cameraVideo');
+    let currentStream = null;
+
+    async function startCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+      }
+      try {
+        const constraints = {
+          audio: false,
+          video: {
+            facingMode: { ideal: state.facingMode },
+            width: { ideal: 320 },
+            height: { ideal: 240 }
+          }
+        };
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        videoEl.srcObject = currentStream;
+        await videoEl.play();
+        state.sourceMode = 'camera';
+        updateSourceUI();
+      } catch (err) {
+        // Fallback to Test Ramp Generator if camera permission denied or unavailable
+        state.sourceMode = 'ramp';
+        updateSourceUI();
+      }
+    }
+
+    function updateSourceUI() {
+      const btnSource = document.getElementById('btnToggleSource');
+      const rampControls = document.getElementById('rampControls');
+      if (state.sourceMode === 'camera') {
+        btnSource.textContent = '📷 CAM (カメラ入力中)';
+        btnSource.className = 'font-mono-tech text-xs px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-emerald-400 border border-emerald-700/60 transition';
+        rampControls.classList.add('hidden');
+      } else {
+        btnSource.textContent = '🌈 RAMP (テスト信号)';
+        btnSource.className = 'font-mono-tech text-xs px-3 py-2 rounded-lg bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-700 transition';
+        rampControls.classList.remove('hidden');
+      }
+    }
+
+    // RGB (0-255) to HSV (H: 0-360, S: 0-1, V: 0-1)
+    function rgbToHsv(r, g, b) {
+      const rf = r / 255;
+      const gf = g / 255;
+      const bf = b / 255;
+      const max = Math.max(rf, gf, bf);
+      const min = Math.min(rf, gf, bf);
+      const d = max - min;
+      let h = 0;
+      const s = max === 0 ? 0 : d / max;
+      const v = max;
+
+      if (max !== min) {
+        switch (max) {
+          case rf:
+            h = (gf - bf) / d + (gf < bf ? 6 : 0);
+            break;
+          case gf:
+            h = (bf - rf) / d + 2;
+            break;
+          case bf:
+            h = (rf - gf) / d + 4;
+            break;
+        }
+        h *= 60;
+      }
+      return [h, s, v];
+    }
+
+    // HSV to RGB helper for Test Ramp Generator
+    function hsvToRgb(h, s, v) {
+      const c = v * s;
+      const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+      const m = v - c;
+      let r = 0, g = 0, b = 0;
+      if (h < 60) { r = c; g = x; b = 0; }
+      else if (h < 120) { r = x; g = c; b = 0; }
+      else if (h < 180) { r = 0; g = c; b = x; }
+      else if (h < 240) { r = 0; g = x; b = c; }
+      else if (h < 300) { r = x; g = 0; b = c; }
+      else { r = c; g = 0; b = x; }
+      return [
+        Math.round((r + m) * 255),
+        Math.round((g + m) * 255),
+        Math.round((b + m) * 255)
+      ];
+    }
+
+    // Draw Test Ramp (`ramp1`) onto the 64x64 processing canvas
+    function drawTestRamp() {
+      const imgData = procCtx.createImageData(RESOLUTION, RESOLUTION);
+      const data = imgData.data;
+      const v = state.rampBright;
+
+      for (let y = 0; y < RESOLUTION; y++) {
+        for (let x = 0; x < RESOLUTION; x++) {
+          let h = 0;
+          let s = 0.95;
+          if (state.rampPreset === 'rainbow') {
+            h = ((x / RESOLUTION + state.rampPhase) % 1.0) * 360;
+          } else if (state.rampPreset === 'red') {
+            h = 5;
+          } else if (state.rampPreset === 'yellow') {
+            h = 55;
+          } else if (state.rampPreset === 'green') {
+            h = 120;
+          } else if (state.rampPreset === 'blue') {
+            h = 225;
+          }
+          const [r, g, b] = hsvToRgb(h, s, v);
+          const idx = (y * RESOLUTION + x) * 4;
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = 255;
+        }
+      }
+      procCtx.putImageData(imgData, 0, 0);
+    }
+
+    // GPWS Flight Computer Sound & Voice Trigger
+    function triggerVoiceCallout(wordIndex) {
+      if (!state.audioEnabled || wordIndex === 0) return;
+      const word = INDEX_TO_WORD[wordIndex].toLowerCase();
+
+      // Visual LFO Pulse LED Flash
+      const lfoBox = document.getElementById('lfoPulseBox');
+      lfoBox.className = 'w-3.5 h-3.5 rounded-sm bg-emerald-400 shadow-[0_0_10px_#34d399] scale-125 transition-transform duration-75';
+      setTimeout(() => {
+        lfoBox.className = 'w-3.5 h-3.5 rounded-sm bg-zinc-800 border border-zinc-600 transition-transform duration-75';
+      }, 90);
+
+      // Ensure Web Audio Context is active
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      // 1. If user uploaded custom WAV buffer OR selected 'custom' with loaded buffer
+      if (customAudioBuffers[word]) {
+        const src = audioCtx.createBufferSource();
+        src.buffer = customAudioBuffers[word];
+        src.playbackRate.value = state.speedRate;
+        src.connect(audioCtx.destination);
+        src.start(0);
+        return;
+      }
+
+      // 2. GPWS Cockpit Radio Formant Burst (adds gritty aviation warning texture)
+      if (state.voiceMode === 'gpws') {
+        playGpwsRadioClick(wordIndex, state.speedRate);
+      }
+
+      // 3. Web Speech API Utterance ("red", "yellow", "green", "blue")
+      if ('speechSynthesis' in window) {
+        // Cancel previous utterance immediately so fast triggers cut cleanly like TD Triggered mode
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(word);
+        utter.lang = 'en-US';
+        if (selectedMaleVoice) {
+          utter.voice = selectedMaleVoice;
+        }
+        // Lower pitch slightly for authoritative flight-computer male tone
+        utter.pitch = state.voiceMode === 'gpws' ? 0.75 : 0.95;
+        // Clamp speechSynthesis rate within browser-supported range (0.7 to 2.5)
+        utter.rate = Math.min(2.5, Math.max(0.7, state.speedRate));
+        utter.volume = 1.0;
+        window.speechSynthesis.speak(utter);
+      }
+    }
+
+    // Web Audio API Gritty Cockpit Radio Transient to accompany GPWS Voice
+    function playGpwsRadioClick(wordIndex, speed) {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const dur = Math.min(0.18, 0.22 / speed);
+
+      // Bandpass filter (300Hz - 2500Hz cockpit comms band)
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      const freqs = [0, 165, 220, 196, 146];
+      filter.frequency.setValueAtTime(freqs[wordIndex] || 180, now);
+      filter.Q.setValueAtTime(3.5, now);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freqs[wordIndex] || 180, now);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start(now);
+      osc.stop(now + dur);
+    }
+
+    // Main Real-Time Analysis Loop (Runs every frame like TouchDesigner's 60fps cook)
+    const maskImageDatas = {
+      red: new ImageData(RESOLUTION, RESOLUTION),
+      yellow: new ImageData(RESOLUTION, RESOLUTION),
+      green: new ImageData(RESOLUTION, RESOLUTION),
+      blue: new ImageData(RESOLUTION, RESOLUTION),
+      overlay: new ImageData(RESOLUTION, RESOLUTION),
+      mono: new ImageData(RESOLUTION, RESOLUTION)
+    };
+
+    function processFrame(timestamp) {
+      // 1. Acquire 64x64 input image (`res1`)
+      if (state.sourceMode === 'camera' && videoEl.readyState >= 2) {
+        procCtx.drawImage(videoEl, 0, 0, RESOLUTION, RESOLUTION);
+      } else {
+        drawTestRamp();
+      }
+
+      const srcData = procCtx.getImageData(0, 0, RESOLUTION, RESOLUTION).data;
+
+      let sumBright = 0;
+      let countRed = 0;
+      let countYellow = 0;
+      let countGreen = 0;
+      let countBlue = 0;
+
+      const dRed = maskImageDatas.red.data;
+      const dYel = maskImageDatas.yellow.data;
+      const dGrn = maskImageDatas.green.data;
+      const dBlu = maskImageDatas.blue.data;
+      const dOvr = maskImageDatas.overlay.data;
+      const dMon = maskImageDatas.mono.data;
+
+      // 2. Pixel-by-pixel analysis (Monochrome TOP + 4x Chroma Key TOP)
+      for (let i = 0; i < srcData.length; i += 4) {
+        const r = srcData[i];
+        const g = srcData[i + 1];
+        const b = srcData[i + 2];
+
+        // HSV Conversion
+        const [h, s, v] = rgbToHsv(r, g, b);
+
+        // Brightness calculation (Section 1: Luminance vs Maximum)
+        const lum = state.monoMode === 'luminance'
+          ? (0.299 * r + 0.587 * g + 0.114 * b) / 255
+          : v;
+        sumBright += lum;
+
+        const monoByte = Math.round(lum * 255);
+        dMon[i] = monoByte;
+        dMon[i + 1] = monoByte;
+        dMon[i + 2] = monoByte;
+        dMon[i + 3] = 255;
+
+        // Chroma Key Saturation & Value Gate (Sat >= 0.25, Val >= 0.15)
+        let isR = 0, isY = 0, isG = 0, isB = 0;
+        if (s >= 0.25 && v >= 0.15) {
+          if (h >= 340 || h <= 20) {
+            isR = 255;
+            countRed++;
+          } else if (h >= 40 && h <= 75) {
+            isY = 255;
+            countYellow++;
+          } else if (h >= 85 && h <= 160) {
+            isG = 255;
+            countGreen++;
+          } else if (h >= 190 && h <= 265) {
+            isB = 255;
+            countBlue++;
+          }
+        }
+
+        // Populate 4 Chroma Key Masks (`RGB Output: New Alpha`)
+        dRed[i] = dRed[i + 1] = dRed[i + 2] = isR; dRed[i + 3] = 255;
+        dYel[i] = dYel[i + 1] = dYel[i + 2] = isY; dYel[i + 3] = 255;
+        dGrn[i] = dGrn[i + 1] = dGrn[i + 2] = isG; dGrn[i + 3] = 255;
+        dBlu[i] = dBlu[i + 1] = dBlu[i + 2] = isB; dBlu[i + 3] = 255;
+
+        // Populate Key Overlay Preview
+        if (isR) { dOvr[i] = 255; dOvr[i + 1] = 40; dOvr[i + 2] = 40; dOvr[i + 3] = 255; }
+        else if (isY) { dOvr[i] = 255; dOvr[i + 1] = 230; dOvr[i + 2] = 0; dOvr[i + 3] = 255; }
+        else if (isG) { dOvr[i] = 20; dOvr[i + 1] = 240; dOvr[i + 2] = 100; dOvr[i + 3] = 255; }
+        else if (isB) { dOvr[i] = 40; dOvr[i + 1] = 150; dOvr[i + 2] = 255; dOvr[i + 3] = 255; }
+        else {
+          dOvr[i] = r * 0.35;
+          dOvr[i + 1] = g * 0.35;
+          dOvr[i + 2] = b * 0.35;
+          dOvr[i + 3] = 255;
+        }
+      }
+
+      // 3. Analyze TOP (Average) & Filter CHOP (Low-pass smoothing)
+      const rawBright = sumBright / TOTAL_PIXELS;
+      const rawRed = countRed / TOTAL_PIXELS;
+      const rawYellow = countYellow / TOTAL_PIXELS;
+      const rawGreen = countGreen / TOTAL_PIXELS;
+      const rawBlue = countBlue / TOTAL_PIXELS;
+
+      const alpha = 1.0 - Math.min(0.92, state.smoothing);
+      state.brightness += (rawBright - state.brightness) * alpha;
+      state.ratios.red += (rawRed - state.ratios.red) * alpha;
+      state.ratios.yellow += (rawYellow - state.ratios.yellow) * alpha;
+      state.ratios.green += (rawGreen - state.ratios.green) * alpha;
+      state.ratios.blue += (rawBlue - state.ratios.blue) * alpha;
+
+      // 4. Shuffle CHOP + Analyze CHOP (`Index of Maximum`)
+      const channels = [
+        state.threshold,      // 0: chan1 (none)
+        state.ratios.red,     // 1: red
+        state.ratios.yellow,  // 2: yellow
+        state.ratios.green,   // 3: green
+        state.ratios.blue     // 4: blue
+      ];
+      let maxVal = -1;
+      let maxIdx = 0;
+      for (let c = 0; c < channels.length; c++) {
+        if (channels[c] > maxVal) {
+          maxVal = channels[c];
+          maxIdx = c;
+        }
+      }
+      state.activeIndex = maxIdx;
+
+      // 5. Section 3: Brightness -> Frequency (0.5 - 5.0 Hz) & Speed (0.7 - 2.5x)
+      let effectiveBright = Math.min(1, Math.max(0, state.brightness));
+      if (state.quantize7Steps) {
+        // Limit CHOP: 7 discrete steps (0/6, 1/6, 2/6, 3/6, 4/6, 5/6, 6/6)
+        effectiveBright = Math.round(effectiveBright * 6) / 6;
+      }
+
+      state.freqHz = 0.5 + effectiveBright * (5.0 - 0.5);
+      state.speedRate = 0.7 + effectiveBright * (2.5 - 0.7);
+
+      // 6. LFO CHOP Pulse Trigger check
+      const intervalMs = 1000 / state.freqHz;
+      if (timestamp - state.lastTriggerTime >= intervalMs) {
+        state.lastTriggerTime = timestamp;
+        if (state.activeIndex > 0) {
+          triggerVoiceCallout(state.activeIndex);
+        }
+      }
+
+      // 7. Render Canvases & Update UI Meters
+      renderCanvases();
+      updateUI(effectiveBright);
+
+      requestAnimationFrame(processFrame);
+    }
+
+    function renderCanvases() {
+      // Draw mini 4-chroma strip
+      maskCanvases.red.putImageData(maskImageDatas.red, 0, 0);
+      maskCanvases.yellow.putImageData(maskImageDatas.yellow, 0, 0);
+      maskCanvases.green.putImageData(maskImageDatas.green, 0, 0);
+      maskCanvases.blue.putImageData(maskImageDatas.blue, 0, 0);
+
+      // Draw Main Viewport based on selected viewMode
+      displayCtx.imageSmoothingEnabled = false;
+      const quadLabels = document.getElementById('quadLabels');
+
+      if (state.viewMode === 'rgb') {
+        quadLabels.classList.add('hidden');
+        displayCtx.drawImage(procCanvas, 0, 0, 256, 256);
+      } else if (state.viewMode === 'overlay') {
+        quadLabels.classList.add('hidden');
+        const tmp = document.createElement('canvas');
+        tmp.width = RESOLUTION; tmp.height = RESOLUTION;
+        tmp.getContext('2d').putImageData(maskImageDatas.overlay, 0, 0);
+        displayCtx.drawImage(tmp, 0, 0, 256, 256);
+      } else if (state.viewMode === 'mono') {
+        quadLabels.classList.add('hidden');
+        const tmp = document.createElement('canvas');
+        tmp.width = RESOLUTION; tmp.height = RESOLUTION;
+        tmp.getContext('2d').putImageData(maskImageDatas.mono, 0, 0);
+        displayCtx.drawImage(tmp, 0, 0, 256, 256);
+      } else if (state.viewMode === 'quad') {
+        quadLabels.classList.remove('hidden');
+        displayCtx.clearRect(0, 0, 256, 256);
+        displayCtx.drawImage(document.getElementById('canvasRed'), 0, 0, 128, 128);
+        displayCtx.drawImage(document.getElementById('canvasYellow'), 128, 0, 128, 128);
+        displayCtx.drawImage(document.getElementById('canvasGreen'), 0, 128, 128, 128);
+        displayCtx.drawImage(document.getElementById('canvasBlue'), 128, 128, 128, 128);
+      }
+    }
+
+    function updateUI(effectiveBright) {
+      // HUD Word & Index
+      const hudWord = document.getElementById('hudWord');
+      hudWord.textContent = INDEX_TO_WORD[state.activeIndex];
+      hudWord.className = `font-mono-tech font-extrabold text-2xl sm:text-4xl tracking-tight ${INDEX_TO_COLOR_CLASS[state.activeIndex]}`;
+      document.getElementById('hudIndex').textContent = state.activeIndex;
+      document.getElementById('chopIndexOut').textContent = state.activeIndex;
+
+      document.getElementById('hudFreq').textContent = state.freqHz.toFixed(2);
+      document.getElementById('hudSpeed').textContent = state.speedRate.toFixed(2);
+
+      // CHOP Bars
+      document.getElementById('barNone').style.width = `${state.threshold * 100}%`;
+      document.getElementById('thresholdMarkerLine').style.left = `${state.threshold * 100}%`;
+      document.getElementById('valNone').textContent = state.threshold.toFixed(3);
+
+      const rPct = Math.min(100, state.ratios.red * 100);
+      const yPct = Math.min(100, state.ratios.yellow * 100);
+      const gPct = Math.min(100, state.ratios.green * 100);
+      const bPct = Math.min(100, state.ratios.blue * 100);
+
+      document.getElementById('barRed').style.width = `${rPct}%`;
+      document.getElementById('barYellow').style.width = `${yPct}%`;
+      document.getElementById('barGreen').style.width = `${gPct}%`;
+      document.getElementById('barBlue').style.width = `${bPct}%`;
+
+      document.getElementById('valRed').textContent = state.ratios.red.toFixed(3);
+      document.getElementById('valYellow').textContent = state.ratios.yellow.toFixed(3);
+      document.getElementById('valGreen').textContent = state.ratios.green.toFixed(3);
+      document.getElementById('valBlue').textContent = state.ratios.blue.toFixed(3);
+
+      // Mini strip percentages
+      document.getElementById('miniRedPct').textContent = `${Math.round(rPct)}%`;
+      document.getElementById('miniYellowPct').textContent = `${Math.round(yPct)}%`;
+      document.getElementById('miniGreenPct').textContent = `${Math.round(gPct)}%`;
+      document.getElementById('miniBluePct').textContent = `${Math.round(bPct)}%`;
+
+      document.getElementById('quadValRed').textContent = state.ratios.red.toFixed(2);
+      document.getElementById('quadValYellow').textContent = state.ratios.yellow.toFixed(2);
+      document.getElementById('quadValGreen').textContent = state.ratios.green.toFixed(2);
+      document.getElementById('quadValBlue').textContent = state.ratios.blue.toFixed(2);
+
+      // Brightness & Speed CHOP
+      document.getElementById('barBrightness').style.width = `${effectiveBright * 100}%`;
+      document.getElementById('valBrightness').textContent = effectiveBright.toFixed(3);
+      document.getElementById('valFreqOut').textContent = state.freqHz.toFixed(2);
+      document.getElementById('valSpeedOut').textContent = state.speedRate.toFixed(2);
+    }
+
+    // UI Event Listeners
+    document.getElementById('btnStartSystem').addEventListener('click', () => {
+      state.audioEnabled = !state.audioEnabled;
+      const btn = document.getElementById('btnStartSystem');
+      const led = document.getElementById('statusLed');
+      if (state.audioEnabled) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtx.resume();
+        initVoices();
+        // Unlock SpeechSynthesis on iOS/Android with a quick test call
+        triggerVoiceCallout(state.activeIndex > 0 ? state.activeIndex : 1);
+        btn.className = 'font-mono-tech text-xs font-bold px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white shadow-lg shadow-red-900/30 flex items-center gap-1.5 transition';
+        document.getElementById('startIcon').textContent = '⏹';
+        document.getElementById('startText').textContent = 'MUTE AUDIO (音声停止)';
+        led.className = 'w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_#22c55e] transition-colors';
+      } else {
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        btn.className = 'font-mono-tech text-xs font-bold px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-lg shadow-emerald-900/30 flex items-center gap-1.5 transition';
+        document.getElementById('startIcon').textContent = '▶';
+        document.getElementById('startText').textContent = 'START SYSTEM (音声ON)';
+        led.className = 'w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b] transition-colors';
+      }
+    });
+
+    document.getElementById('btnToggleSource').addEventListener('click', () => {
+      if (state.sourceMode === 'camera') {
+        state.sourceMode = 'ramp';
+        updateSourceUI();
+      } else {
+        startCamera();
+      }
+    });
+
+    document.getElementById('btnFlipCam').addEventListener('click', () => {
+      state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment';
+      startCamera();
+    });
+
+    // View Mode Buttons
+    document.querySelectorAll('.view-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.viewMode = btn.dataset.view;
+        document.querySelectorAll('.view-btn').forEach(b => {
+          b.className = 'view-btn px-2 py-1 rounded-md text-zinc-400 hover:text-white';
+        });
+        btn.className = 'view-btn px-2 py-1 rounded-md bg-zinc-700 text-white font-semibold';
+      });
+    });
+
+    // Ramp Preset Buttons
+    document.querySelectorAll('.ramp-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.rampPreset = btn.dataset.preset;
+      });
+    });
+
+    document.getElementById('sliderRampPhase').addEventListener('input', (e) => {
+      state.rampPhase = parseFloat(e.target.value);
+      document.getElementById('valRampPhase').textContent = state.rampPhase.toFixed(2);
+    });
+
+    document.getElementById('sliderRampBright').addEventListener('input', (e) => {
+      state.rampBright = parseFloat(e.target.value);
+      document.getElementById('valRampBright').textContent = state.rampBright.toFixed(2);
+    });
+
+    document.getElementById('sliderThreshold').addEventListener('input', (e) => {
+      state.threshold = parseFloat(e.target.value);
+      document.getElementById('lblThreshold').textContent = state.threshold.toFixed(2);
+    });
+
+    document.getElementById('sliderSmoothing').addEventListener('input', (e) => {
+      state.smoothing = parseFloat(e.target.value);
+      document.getElementById('lblSmoothing').textContent = `${state.smoothing.toFixed(2)}s`;
+    });
+
+    // Continuous vs 7-Step Limit CHOP Mode
+    const btnModeCont = document.getElementById('btnModeCont');
+    const btnModeStep = document.getElementById('btnModeStep');
+    btnModeCont.addEventListener('click', () => {
+      state.quantize7Steps = false;
+      btnModeCont.className = 'px-2 py-0.5 rounded bg-emerald-600 text-white font-bold';
+      btnModeStep.className = 'px-2 py-0.5 rounded text-zinc-400 hover:text-white';
+    });
+    btnModeStep.addEventListener('click', () => {
+      state.quantize7Steps = true;
+      btnModeStep.className = 'px-2 py-0.5 rounded bg-emerald-600 text-white font-bold';
+      btnModeCont.className = 'px-2 py-0.5 rounded text-zinc-400 hover:text-white';
+    });
+
+    document.getElementById('selectMonoMode').addEventListener('change', (e) => {
+      state.monoMode = e.target.value;
+    });
+
+    document.getElementById('selectVoiceMode').addEventListener('change', (e) => {
+      state.voiceMode = e.target.value;
+    });
+
+    document.getElementById('btnTestVoice').addEventListener('click', () => {
+      const wasEnabled = state.audioEnabled;
+      state.audioEnabled = true;
+      triggerVoiceCallout(state.activeIndex > 0 ? state.activeIndex : 1);
+      state.audioEnabled = wasEnabled;
+    });
+
+    // Custom Audio File Uploader (`Audio File In CHOP` replacement)
+    document.querySelectorAll('.custom-audio-input').forEach(input => {
+      input.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const word = e.target.dataset.word;
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuf = await file.arrayBuffer();
+        customAudioBuffers[word] = await audioCtx.decodeAudioData(arrayBuf);
+        state.voiceMode = 'custom';
+        document.getElementById('selectVoiceMode').value = 'custom';
+      });
+    });
+
+    // Boot Application
+    window.addEventListener('load', () => {
+      startCamera();
+      requestAnimationFrame(processFrame);
+    });
+  </script>
+</body>
+</html>
